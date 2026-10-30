@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "konochi.konocontrol",
+  "name": "Konocontrol",
+  "version": "1.0.0",
+  "author": "alec",
+  "license": "MIT",
+  "description": "Collect built-in Omarchy bar widgets with native placement switches",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "Widget.qml"},
+  "barWidget": {
+    "displayName": "Konocontrol",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

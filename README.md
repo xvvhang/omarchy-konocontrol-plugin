@@ -3,6 +3,10 @@
 A native control center for Omarchy. Part of [Konochi](https://github.com/xvvhang/konochi),
 a collection of native Omarchy plugins.
 
+## Screenshot
+
+[<img src="preview.png" alt="Konocontrol with Media, Quick Actions, and native controls" width="420">](preview.png)
+
 ## Features
 
 - Collect built-in bar widgets into one panel, or restore them to the bar.

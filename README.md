@@ -38,6 +38,14 @@ Konocontrol moves their existing instances rather than replacing them.
 This plugin depends on Omarchy's native shell internals; future shell changes,
 vertical bars, and multi-monitor setups may require compatibility updates.
 
+## Removal
+
+In **Configure**, switch collected widgets back to **Bar**, then run:
+
+```sh
+omarchy plugin remove konochi.konocontrol
+```
+
 ## License
 
 [MIT](LICENSE). Built for [Omarchy](https://omarchy.org/) and

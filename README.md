@@ -16,6 +16,8 @@ a collection of native Omarchy plugins.
   Indicators, and keyboard-layout actions. Single keyboard layouts auto-hide.
 - Escape from a detail panel returns to the control center and restores its
   scroll position; clicking outside dismisses it.
+- Collected System Update appears in Quick Actions only when updates are pending;
+  its native update indicator also remains visible in the bar while pending.
 
 ## Installation
 

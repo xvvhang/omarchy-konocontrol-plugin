@@ -113,6 +113,7 @@ BorderSurface {
         tooltipText: "Previous track"
         foreground: root.foreground
         fontFamily: root.fontFamily
+        iconSize: Style.font.iconLarge
         enabled: !!root.player && root.player.canGoPrevious
         opacity: enabled ? 1 : 0.4
         focusable: true
@@ -139,6 +140,7 @@ BorderSurface {
         tooltipText: "Next track"
         foreground: root.foreground
         fontFamily: root.fontFamily
+        iconSize: Style.font.iconLarge
         enabled: !!root.player && root.player.canGoNext
         opacity: enabled ? 1 : 0.4
         focusable: true

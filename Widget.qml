@@ -37,7 +37,10 @@ Panel {
   readonly property var nativeKeyboard: nativeWidgetFor("omarchy.keyboard-layout")
   readonly property bool keyboardCollected: nativeKeyboard !== null && isCollected("omarchy.keyboard-layout")
   readonly property bool showKeyboardAction: keyboardCollected && nativeKeyboard.multipleLayouts && nativeKeyboard.layoutLabel !== ""
-  readonly property int dockedInlineCount: (indicatorsCollected ? 1 : 0) + (menuCollected ? 1 : 0) + (keyboardCollected ? 1 : 0)
+  readonly property var nativeUpdate: nativeWidgetFor("omarchy.system-update")
+  readonly property bool updateCollected: nativeUpdate !== null && isCollected("omarchy.system-update")
+  readonly property bool showUpdateAction: updateCollected && nativeUpdate.updateAvailable
+  readonly property int dockedInlineCount: (indicatorsCollected ? 1 : 0) + (menuCollected ? 1 : 0) + (keyboardCollected ? 1 : 0) + (updateCollected ? 1 : 0)
 
   HoverHandler {
     id: barHover
@@ -193,7 +196,7 @@ Panel {
         var host = hosts.itemAt(i)
         if (host) widgets.push({id: host.widgetId, collected: host.collected,
           inline: host.inlineAction,
-          quickAction: host.parent === keyboardDock || host.parent === menuDock,
+          quickAction: host.parent === keyboardDock || host.parent === menuDock || (host.widgetId === "omarchy.system-update" && root.showUpdateAction),
           keyboardLayout: host.widgetId === "omarchy.keyboard-layout" && host.nativeItem ? {label: host.nativeItem.layoutLabel, multiple: host.nativeItem.multipleLayouts} : null,
           special: host.specialCard,
           controls: host.specialCardControls(),
@@ -222,6 +225,9 @@ Panel {
       }
       return JSON.stringify({drawer: root.opened, configuring: root.configuring, widgets: widgets,
         configuration: rows, indicatorActions: indicatorStrip.actionRects(), barHovered: barHover.hovered,
+        updateAction: {collected: root.updateCollected, available: root.nativeUpdate ? root.nativeUpdate.updateAvailable : false,
+          visible: updateAction.visible, x: updateAction.mapToGlobal(0, 0).x, y: updateAction.mapToGlobal(0, 0).y,
+          width: updateAction.width, height: updateAction.height},
         panel: {x: drawer.cardOrigin.x, y: drawer.cardOrigin.y, width: drawer.contentWidth, height: drawer.contentHeight},
         headerAction: {x: optionsButton.mapToGlobal(0, 0).x, y: optionsButton.mapToGlobal(0, 0).y,
           width: optionsButton.width, height: optionsButton.height},
@@ -379,7 +385,7 @@ Panel {
           }
 
           Column {
-            visible: !root.configuring && (root.indicatorsCollected || root.menuCollected || root.showKeyboardAction)
+            visible: !root.configuring && (root.indicatorsCollected || root.menuCollected || root.showKeyboardAction || root.showUpdateAction)
             width: parent.width
             spacing: Style.spacing.panelGap
 
@@ -402,22 +408,43 @@ Panel {
                 id: menuDock
                 anchors.left: parent.left
                 height: parent.height
-                width: root.menuCollected ? (root.indicatorsCollected ? (parent.width - keyboardDock.width) / 7 : Style.space(44)) : 0
+                width: root.menuCollected ? (root.indicatorsCollected ? (parent.width - keyboardDock.width - updateDock.width) / 7 : Style.space(44)) : 0
                 visible: root.menuCollected
               }
 
               Item {
                 id: keyboardDock
-                x: root.indicatorsCollected || root.menuCollected ? parent.width - width : 0
+                x: root.indicatorsCollected || root.menuCollected || root.showUpdateAction ? parent.width - width : 0
                 height: parent.height
                 width: root.showKeyboardAction ? Style.space(48) : 0
                 visible: root.showKeyboardAction
               }
 
+              Item {
+                id: updateDock
+                anchors.right: keyboardDock.left
+                height: parent.height
+                width: root.showUpdateAction ? Style.space(48) : 0
+                visible: root.showUpdateAction
+
+                BarIconButton {
+                  id: updateAction
+                  anchors.fill: parent
+                  bar: root.bar
+                  text: "\uf021"
+                  fontSize: Style.space(16)
+                  tooltipText: "Pending Omarchy Updates"
+                  onPressed: {
+                    if (root.nativeUpdate) root.nativeUpdate.runUpdate()
+                    root.close()
+                  }
+                }
+              }
+
               IndicatorStrip {
                 id: indicatorStrip
                 anchors.left: menuDock.right
-                anchors.right: keyboardDock.left
+                anchors.right: updateDock.left
                 anchors.bottom: parent.bottom
                 height: parent.height
                 visible: root.indicatorsCollected
@@ -467,9 +494,9 @@ Panel {
                 property var inactiveIndicatorArea: null
                 property var sizedIcons: []
                 property var escapeTargets: []
-                visible: !root.configuring && collected && widgetId !== "omarchy.indicators"
-                width: collected && widgetId !== "omarchy.indicators" ? (specialCard || widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.width : inlineAction ? Math.min(parent.width, Math.max(Style.space(44), visual.implicitWidth + Style.space(24))) : Math.floor((parent.width - parent.spacing) / 2)) : 0
-                height: collected && widgetId !== "omarchy.indicators" ? (specialCard ? (specialView.item ? specialView.item.implicitHeight : Style.space(120)) : widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.height : inlineAction ? Style.space(44) : Style.space(64)) : 0
+                visible: !root.configuring && collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update"
+                width: collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update" ? (specialCard || widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.width : inlineAction ? Math.min(parent.width, Math.max(Style.space(44), visual.implicitWidth + Style.space(24))) : Math.floor((parent.width - parent.spacing) / 2)) : 0
+                height: collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update" ? (specialCard ? (specialView.item ? specialView.item.implicitHeight : Style.space(120)) : widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.height : inlineAction ? Style.space(44) : Style.space(64)) : 0
 
                 Binding {
                   target: host.widgetId === "omarchy.keyboard-layout" ? host.nativeButton() : null
@@ -642,16 +669,6 @@ Panel {
                   }
                 }
 
-                // An explicitly collected update button should remain available
-                // even when no pending-update indicator is present on the Bar.
-                Binding {
-                  target: host.nativeItem
-                  property: "visible"
-                  when: host.collected && host.widgetId === "omarchy.system-update" && host.nativeItem !== null
-                  value: true
-                  restoreMode: Binding.RestoreBindingOrValue
-                }
-
                 function nativeButton() {
                   function find(item) {
                     if (!item) return null
@@ -727,7 +744,7 @@ Panel {
                 }
 
                 function sync() {
-                  if (widgetId === "omarchy.indicators") { release(); return }
+                  if (widgetId === "omarchy.indicators" || widgetId === "omarchy.system-update") { release(); return }
                   if (!collected || !nativeItem) { release(); return }
                   if (borrowed === nativeItem) { repairAnchors(); return }
                   release()

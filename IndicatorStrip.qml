@@ -8,12 +8,23 @@ Item {
   id: root
   property var nativeIndicators: null
   readonly property var nativeBar: nativeIndicators ? nativeIndicators.bar : null
+  readonly property int indicatorCount: icons.count
   implicitHeight: Style.space(44)
 
   QtObject {
     id: indicatorHost
     readonly property bool revealInactiveIndicators: true
     function setIndicatorItemHovered(hovered) {}
+    signal refreshRequested()
+    function refresh() {
+      if (root.nativeIndicators && typeof root.nativeIndicators.refresh === "function") root.nativeIndicators.refresh()
+      else refreshRequested()
+    }
+  }
+  Connections {
+    target: root.nativeIndicators
+    ignoreUnknownSignals: true
+    function onRefreshRequested() { indicatorHost.refreshRequested() }
   }
 
   function actionRects() {
@@ -23,7 +34,7 @@ Item {
       var item = cell ? cell.indicator : null
       if (!item) continue
       var point = item.mapToGlobal(0, 0)
-      result.push({id: cell.modelData, active: item.active, x: point.x, y: point.y,
+      result.push({id: cell.indicatorId, active: item.active, x: point.x, y: point.y,
         width: item.width, height: item.height, tooltip: item.tooltipText, opacity: item.opacity,
         hovered: cell.hovered})
     }
@@ -37,14 +48,17 @@ Item {
 
     Repeater {
       id: icons
-      model: ["Dictation", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake"]
+      // Follow native defaults/configuration: RC removes Dictation and adds
+      // PasswordlessSudo and RemoteSession. Never load removed implementations.
+      model: root.nativeIndicators ? root.nativeIndicators.indicatorEntries : []
 
       delegate: Item {
         id: cell
-        required property string modelData
+        required property var modelData
+        readonly property string indicatorId: typeof modelData === "string" ? modelData : modelData.id
         readonly property var indicator: indicatorLoader.item
         readonly property bool hovered: cellHover.hovered
-        width: parent.width / 6
+        width: icons.count > 0 ? parent.width / icons.count : 0
         height: parent.height
 
         HoverHandler { id: cellHover }
@@ -61,9 +75,10 @@ Item {
           anchors.fill: parent
           function load() {
             if (!root.nativeBar || source.toString()) return
-            setSource("file:///usr/share/omarchy/shell/plugins/bar/indicators/" + cell.modelData + ".qml", {
+            setSource("file:///usr/share/omarchy/shell/plugins/bar/indicators/" + cell.indicatorId + ".qml", {
               bar: root.nativeBar,
-              moduleName: cell.modelData,
+              moduleName: cell.indicatorId,
+              settings: typeof cell.modelData === "object" ? root.nativeIndicators.entrySettings(cell.modelData) : {},
               indicatorHost: indicatorHost,
               indicatorBlock: "single",
               fontSize: Style.space(16),

@@ -24,7 +24,7 @@ Panel {
       || root.label(a.moduleName).localeCompare(root.label(b.moduleName))
   })
   readonly property var collected: setting("collected", [
-    "omarchy.audio", "omarchy.bluetooth", "omarchy.network", "omarchy.monitor", "omarchy.power"
+    "omarchy.audio", "omarchy.bluetooth", "omarchy.network", "omarchy.monitor", "omarchy.power", "omarchy.elsewhen"
   ]).filter(function(id) { return id.indexOf("omarchy.") === 0 && id !== "omarchy.tray" })
   readonly property color foreground: bar ? bar.foreground : "white"
   readonly property string textFont: bar ? bar.fontFamily : "monospace"
@@ -62,6 +62,8 @@ Panel {
   readonly property int specialCount: slots.filter(function(slot) { return isCollected(slot.moduleName) && specialWidget(slot.moduleName) }).length
 
   function isCollected(id) { return collected.indexOf(id) !== -1 }
+  // RC shells separate placement (ModuleSlot) from widget ownership (WidgetHost).
+  function widgetHost(slot) { return slot && "host" in slot ? slot.host : slot }
   function specialWidget(id) { return id === "omarchy.media" }
   function inlineWidget(id, item) { return id !== "omarchy.microphone" && !specialWidget(id) && (id === "omarchy.menu" || (item !== null && typeof item.open !== "function")) }
   function nativeWidgetFor(id) {
@@ -106,7 +108,10 @@ Panel {
     if (id === "omarchy.tray") return false
     // Placement controls are intentionally limited to genuine first-party slots.
     var supported = false
-    for (var i = 0; i < slots.length; i++) if (slots[i].moduleName === id && slots[i].firstParty) supported = true
+    for (var i = 0; i < slots.length; i++) {
+      var owner = widgetHost(slots[i])
+      if (slots[i].moduleName === id && owner && owner.firstParty) supported = true
+    }
     if (!supported) return false
     var ids = collected.slice()
     var index = ids.indexOf(id)
@@ -126,7 +131,7 @@ Panel {
   }
 
   function label(id) {
-    var labels = {"omarchy.network": "Wi-Fi", "omarchy.monitor": "Display", "omarchy.power": "Battery"}
+    var labels = {"omarchy.network": "Wi-Fi", "omarchy.monitor": "Display", "omarchy.power": "Battery", "omarchy.elsewhen": "World Clock"}
     if (labels[id]) return labels[id]
     var name = id.split(".").pop().replace(/-/g, " ")
     return name.charAt(0).toUpperCase() + name.slice(1)
@@ -142,7 +147,8 @@ Panel {
     function walk(item) {
       if (!item) return
       if ("activeItem" in item && "entry" in item && "region" in item) {
-        if (item.firstParty === true && item.moduleName && item.moduleName.indexOf("omarchy.") === 0 && item.moduleName !== "omarchy.spacer" && item.moduleName !== "omarchy.tray" && item.activeItem)
+        var owner = root.widgetHost(item)
+        if (owner && owner.firstParty === true && item.moduleName && item.moduleName.indexOf("omarchy.") === 0 && item.moduleName !== "omarchy.spacer" && item.moduleName !== "omarchy.tray" && item.activeItem)
           found.push(item)
         return
       }
@@ -205,7 +211,9 @@ Panel {
           moved: host.borrowed !== null, opened: host.nativeItem ? !!(host.nativeItem.opened || host.nativeItem.popupOpen) : false,
           geometry: {x: host.mapToGlobal(0, 0).x, y: host.mapToGlobal(0, 0).y, width: host.width, height: host.height},
           nativeWidth: host.nativeItem ? host.nativeItem.width : 0,
-          nativeHeight: host.nativeItem ? host.nativeItem.height : 0,
+           nativeHeight: host.nativeItem ? host.nativeItem.height : 0,
+           barSlot: host.slot ? {width: host.slot.width, height: host.slot.height,
+             implicitWidth: host.slot.implicitWidth, implicitHeight: host.slot.implicitHeight} : null,
           nativeVisible: host.nativeItem ? host.nativeItem.visible : false,
           alwaysShow: host.nativeItem && "alwaysShowIndicators" in host.nativeItem ? host.nativeItem.alwaysShowIndicators : null,
           inactiveWidth: host.inactiveIndicatorArea ? host.inactiveIndicatorArea.implicitWidth : null,
@@ -233,10 +241,22 @@ Panel {
           width: optionsButton.width, height: optionsButton.height},
         scrollY: contentScroll.contentY,
         returnOwner: root.returnOwner ? root.returnOwner.moduleName : "",
-        referenceIcon: {width: button.implicitWidth, fontSize: button.fontSize},
+        referenceIcon: {width: button.implicitWidth, fontSize: button.fontSize,
+          drawingWidth: barIcon.width, drawingHeight: barIcon.height},
         error: root.saveError})
     }
     function placement(id: string, collected: bool): bool { return root.setCollected(id, collected) }
+    function activate(id: string): bool {
+      if (!root.opened || root.configuring) return false
+      for (var i = 0; i < hosts.count; i++) {
+        var host = hosts.itemAt(i)
+        if (host && host.widgetId === id && host.collected) {
+          host.activate(Qt.LeftButton)
+          return true
+        }
+      }
+      return false
+    }
     function configure(): void { root.configuring = true; root.open() }
     function overview(): void { root.configuring = false; root.open() }
     function scroll(delta: int): void { contentScroll.contentY = Math.max(0, contentScroll.contentY + delta) }
@@ -246,8 +266,16 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    iconComponent: Component {
-      ControlCenterIcon { foreground: button.foreground }
+    hasVisualContent: true
+    // Keep the switch drawing's original canvas padding. RC's iconComponent
+    // normalization expands the filled paths to the full native ink size.
+    ControlCenterIcon {
+      id: barIcon
+      anchors.centerIn: parent
+      width: Style.bar.iconSize + Style.space(2)
+      height: width
+      scale: button.pressScale
+      foreground: button.foreground
     }
     tooltipText: "Konocontrol · Right-click to choose widgets"
     onPressed: function(b) {
@@ -408,7 +436,7 @@ Panel {
                 id: menuDock
                 anchors.left: parent.left
                 height: parent.height
-                width: root.menuCollected ? (root.indicatorsCollected ? (parent.width - keyboardDock.width - updateDock.width) / 7 : Style.space(44)) : 0
+                width: root.menuCollected ? (root.indicatorsCollected ? (parent.width - keyboardDock.width - updateDock.width) / (indicatorStrip.indicatorCount + 1) : Style.space(44)) : 0
                 visible: root.menuCollected
               }
 
@@ -490,6 +518,7 @@ Panel {
                 property var borrowed: null
                 property var originalParent: null
                 property var originalSlotParent: null
+                property var originalFill: null
                 property var savedAnchors: []
                 property var inactiveIndicatorArea: null
                 property var sizedIcons: []
@@ -497,6 +526,23 @@ Panel {
                 visible: !root.configuring && collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update"
                 width: collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update" ? (specialCard || widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.width : inlineAction ? Math.min(parent.width, Math.max(Style.space(44), visual.implicitWidth + Style.space(24))) : Math.floor((parent.width - parent.spacing) / 2)) : 0
                 height: collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update" ? (specialCard ? (specialView.item ? specialView.item.implicitHeight : Style.space(120)) : widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.height : inlineAction ? Style.space(44) : Style.space(64)) : 0
+
+                // RC layouts consume preferred/implicit sizes, not slot.width.
+                // Restore their original bindings when returning a widget to Bar.
+                Binding {
+                  target: host.slot
+                  property: "implicitWidth"
+                  when: host.borrowed !== null && host.slot !== null && "host" in host.slot
+                  value: 0
+                  restoreMode: Binding.RestoreBindingOrValue
+                }
+                Binding {
+                  target: host.slot
+                  property: "implicitHeight"
+                  when: host.borrowed !== null && host.slot !== null && "host" in host.slot
+                  value: 0
+                  restoreMode: Binding.RestoreBindingOrValue
+                }
 
                 Binding {
                   target: host.widgetId === "omarchy.keyboard-layout" ? host.nativeButton() : null
@@ -577,10 +623,10 @@ Panel {
                   when: host.widgetId === "omarchy.indicators" && host.nativeItem !== null
                   value: {
                     var settings = {}
-                    var source = host.slot ? host.slot.moduleSettings : {}
+                    var owner = root.widgetHost(host.slot)
+                    var source = owner ? owner.moduleSettings : {}
                     for (var key in source) settings[key] = source[key]
                     settings.alwaysShow = !host.collected
-                    settings.items = ["Dictation", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake"]
                     return settings
                   }
                   restoreMode: Binding.RestoreBindingOrValue
@@ -727,20 +773,21 @@ Panel {
                   if (originalParent) {
                     originalParent.anchors.fill = null
                     originalParent.parent = originalSlotParent
-                    originalParent.anchors.fill = originalSlotParent
+                    originalParent.anchors.fill = originalFill
                   }
                   for (var i = 0; i < savedAnchors.length; i++) {
                     var entry = savedAnchors[i]
                     if (entry.object) entry.object.anchorItem = entry.anchor
                   }
                   savedAnchors = []
-                  if (slot) {
+                  if (slot && !("host" in slot)) {
                     slot.width = Qt.binding(function() { return slot.implicitWidth })
                     slot.height = Qt.binding(function() { return slot.implicitHeight })
                   }
                   borrowed = null
                   originalParent = null
                   originalSlotParent = null
+                  originalFill = null
                 }
 
                 function sync() {
@@ -753,12 +800,15 @@ Panel {
                   // is visually reparented. Move that Loader, not its item.
                   originalParent = borrowed.parent
                   originalSlotParent = originalParent.parent
+                  originalFill = originalParent.anchors.fill
                   repairAnchors()
                   originalParent.anchors.fill = null
                   originalParent.parent = widgetId === "omarchy.microphone" ? microphoneParking : visual
                   originalParent.anchors.fill = originalParent.parent
-                  slot.width = 0
-                  slot.height = 0
+                  if (!("host" in slot)) {
+                    slot.width = 0
+                    slot.height = 0
+                  }
                   repairAnchors()
                 }
 

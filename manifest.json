@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "konochi.konocontrol",
   "name": "Konocontrol",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "alec",
   "license": "MIT",
   "description": "Collect built-in Omarchy bar widgets with native placement switches",

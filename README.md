@@ -43,6 +43,24 @@ Konocontrol moves their existing instances rather than replacing them.
 This plugin depends on Omarchy's native shell internals; future shell changes,
 vertical bars, and multi-monitor setups may require compatibility updates.
 
+### Album artwork limits
+
+Artwork uses Python 3 (standard library only, no extra packages). When a selected
+local MPRIS player supplies a cover URL, the plugin may fetch that URL over HTTPS;
+local `file://` artwork is also supported. There is no polling or retry loop.
+HTTP, redirects, embedded credentials, nonlocal file URLs, symlinks, non-regular
+files and formats other than PNG/JPEG are rejected and show the music placeholder.
+
+Before Qt receives any image, a separate helper caps the encoded input at 2 MiB
+(including responses without Content-Length), enforces a 5-second complete-operation
+deadline, and checks raster headers against a 4,000,000-pixel / 8192-pixel-side
+budget. Qt then decodes the bounded in-memory data URL at display size using
+`SizedImage`; the original player URL never reaches Qt's network image loader.
+There are no temporary artwork files or download subprocesses. Track/URL changes
+clear the previous cover, cancel the helper and discard stale results. A separate
+6-second watchdog kills a stuck helper; cancellation escalates to a kill after
+100 ms, and component destruction kills the helper immediately.
+
 ### World Clock
 
 On shells with Elsewhen, keep `omarchy.elsewhen` enabled in `bar.layout` and
@@ -71,8 +89,14 @@ Discovery regression checks (development only, requires Node.js):
 
 ```sh
 node test_compat.cjs
+python3 -B test_artwork.py
 omarchy plugin validate .
 ```
+
+Artwork tests require `openssl` to create an ephemeral certificate for a local
+TLS test server. They cover ordinary art, announced and chunked oversized responses,
+below-idle-timeout trickles, cancellation/connection cleanup, local file checks,
+pixel budgets, unsupported URLs and redirects. They contact no public services.
 
 ## Removal
 

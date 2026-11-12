@@ -12,6 +12,11 @@ BorderSurface {
   readonly property var player: nativeWidget ? nativeWidget.activePlayer : null
   readonly property bool hasTrack: !!player && !!(player.trackTitle || player.trackArtist)
 
+  BoundedArt {
+    id: artwork
+    url: root.hasTrack ? String(root.player.trackArtUrl || "") : ""
+  }
+
   implicitHeight: content.implicitHeight + Style.spacing.rowPaddingX * 2
   radius: Style.cornerRadius
   color: Style.normalFillFor(foreground, Commons.Color.accent)
@@ -53,11 +58,10 @@ BorderSurface {
         color: Style.selectedFillFor(root.foreground, Commons.Color.accent)
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
-        Image {
+        SizedImage {
           id: art
           anchors.fill: parent
-          source: root.hasTrack ? (root.player.trackArtUrl || "") : ""
-          fillMode: Image.PreserveAspectFit
+          url: artwork.dataUrl
           asynchronous: true
         }
         Text {

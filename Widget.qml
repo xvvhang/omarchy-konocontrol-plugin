@@ -62,6 +62,14 @@ Panel {
   readonly property int specialCount: slots.filter(function(slot) { return isCollected(slot.moduleName) && specialWidget(slot.moduleName) }).length
 
   function isCollected(id) { return collected.indexOf(id) !== -1 }
+  readonly property bool collectedPanelOpen: hasOpenCollectedPanel()
+  function hasOpenCollectedPanel() {
+    for (var i = 0; i < slots.length; i++) {
+      var item = slots[i].activeItem
+      if (isCollected(slots[i].moduleName) && item && (item.opened || item.popupOpen)) return true
+    }
+    return false
+  }
   // RC shells separate placement (ModuleSlot) from widget ownership (WidgetHost).
   function widgetHost(slot) { return slot && "host" in slot ? slot.host : slot }
   function specialWidget(id) { return id === "omarchy.media" }
@@ -212,7 +220,7 @@ Panel {
           geometry: {x: host.mapToGlobal(0, 0).x, y: host.mapToGlobal(0, 0).y, width: host.width, height: host.height},
           nativeWidth: host.nativeItem ? host.nativeItem.width : 0,
            nativeHeight: host.nativeItem ? host.nativeItem.height : 0,
-           barSlot: host.slot ? {width: host.slot.width, height: host.slot.height,
+           barSlot: host.slot ? {width: host.slot.width, height: host.slot.height, clip: host.slot.clip,
              implicitWidth: host.slot.implicitWidth, implicitHeight: host.slot.implicitHeight} : null,
           nativeVisible: host.nativeItem ? host.nativeItem.visible : false,
           alwaysShow: host.nativeItem && "alwaysShowIndicators" in host.nativeItem ? host.nativeItem.alwaysShowIndicators : null,
@@ -231,7 +239,7 @@ Panel {
         if (row) rows.push({id: row.modelData.moduleName, x: row.mapToGlobal(0, 0).x,
           y: row.mapToGlobal(0, 0).y, width: row.width, height: row.height})
       }
-      return JSON.stringify({drawer: root.opened, configuring: root.configuring, widgets: widgets,
+      return JSON.stringify({drawer: root.opened, collectedPanelOpen: root.collectedPanelOpen, configuring: root.configuring, widgets: widgets,
         configuration: rows, indicatorActions: indicatorStrip.actionRects(), barHovered: barHover.hovered,
         updateAction: {collected: root.updateCollected, available: root.nativeUpdate ? root.nativeUpdate.updateAvailable : false,
           visible: updateAction.visible, x: updateAction.mapToGlobal(0, 0).x, y: updateAction.mapToGlobal(0, 0).y,
@@ -281,6 +289,27 @@ Panel {
     onPressed: function(b) {
       if (b === Qt.RightButton) { root.configuring = true; root.open() }
       else if (b === Qt.LeftButton) { root.configuring = false; root.toggle() }
+    }
+  }
+
+  // The bar only marks its active popup's own slot. Collected slots have no
+  // bar space, so mirror that mark here while their native panel is open.
+  Rectangle {
+    readonly property bool vertical: root.bar ? root.bar.vertical : false
+    readonly property string position: root.bar ? root.bar.position : "top"
+    readonly property int inset: Style.space(2)
+    readonly property real extent: Math.max(Style.space(10), Math.round((vertical ? root.height : root.width) * 0.55))
+    visible: opacity > 0
+    opacity: root.collectedPanelOpen && !root.opened ? 0.9 : 0
+    color: Color.accent
+    radius: Math.min(width, height) / 2
+    width: vertical ? Style.space(2) : extent
+    height: vertical ? extent : Style.space(2)
+    x: vertical ? (position === "left" ? parent.width - width - inset : inset) : Math.floor((parent.width - width) / 2)
+    y: vertical ? Math.floor((parent.height - height) / 2) : (position === "top" ? parent.height - height - inset : inset)
+    z: 50
+    Behavior on opacity {
+      NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic }
     }
   }
 
@@ -529,6 +558,16 @@ Panel {
 
                 // RC layouts consume preferred/implicit sizes, not slot.width.
                 // Restore their original bindings when returning a widget to Bar.
+                // A zero-sized slot still paints its minimum-width panel mark
+                // outside its bounds unless clipped. The borrowed Loader lives
+                // in our drawer now, so clipping only hides the old bar visuals.
+                Binding {
+                  target: host.slot
+                  property: "clip"
+                  when: host.borrowed !== null && host.slot !== null
+                  value: true
+                  restoreMode: Binding.RestoreBindingOrValue
+                }
                 Binding {
                   target: host.slot
                   property: "implicitWidth"

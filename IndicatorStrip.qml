@@ -7,6 +7,7 @@ import qs.Commons
 Item {
   id: root
   property var nativeIndicators: null
+  property color foreground: Color.foreground
   readonly property var nativeBar: nativeIndicators ? nativeIndicators.bar : null
   readonly property int indicatorCount: icons.count
   implicitHeight: Style.space(44)
@@ -77,6 +78,8 @@ Item {
             if (!root.nativeBar || source.toString()) return
             setSource("file:///usr/share/omarchy/shell/plugins/bar/indicators/" + cell.indicatorId + ".qml", {
               bar: root.nativeBar,
+              foreground: Qt.binding(function() { return root.foreground }),
+              useActiveColor: false,
               moduleName: cell.indicatorId,
               settings: typeof cell.modelData === "object" ? root.nativeIndicators.entrySettings(cell.modelData) : {},
               indicatorHost: indicatorHost,

@@ -488,6 +488,8 @@ Panel {
                   id: updateAction
                   anchors.fill: parent
                   bar: root.bar
+                  foreground: root.foreground
+                  useActiveColor: false
                   text: "\uf021"
                   fontSize: Style.space(16)
                   tooltipText: "Pending Omarchy Updates"
@@ -506,6 +508,7 @@ Panel {
                 height: parent.height
                 visible: root.indicatorsCollected
                 nativeIndicators: root.nativeIndicators
+                foreground: root.foreground
               }
             }
           }
@@ -551,6 +554,7 @@ Panel {
                 property var savedAnchors: []
                 property var inactiveIndicatorArea: null
                 property var sizedIcons: []
+                property var panelButtons: []
                 property var escapeTargets: []
                 visible: !root.configuring && collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update"
                 width: collected && widgetId !== "omarchy.indicators" && widgetId !== "omarchy.system-update" ? (specialCard || widgetId === "omarchy.menu" || widgetId === "omarchy.keyboard-layout" ? parent.width : inlineAction ? Math.min(parent.width, Math.max(Style.space(44), visual.implicitWidth + Style.space(24))) : Math.floor((parent.width - parent.spacing) / 2)) : 0
@@ -718,7 +722,7 @@ Panel {
                 }
                 Timer {
                   interval: 250
-                  running: host.widgetId === "omarchy.indicators" || host.widgetId === "omarchy.system-update"
+                  running: host.collected || host.widgetId === "omarchy.indicators" || host.widgetId === "omarchy.system-update"
                   repeat: true
                   triggeredOnStart: true
                   onTriggered: {
@@ -729,8 +733,10 @@ Panel {
 
                 function syncIconSizes() {
                   var found = []
+                  var buttons = []
                   function walk(item) {
                     if (!item) return
+                    if (typeof item.triggerPress === "function" && "foreground" in item && "useActiveColor" in item) buttons.push(item)
                     if (typeof item.triggerPress === "function" && "opticalSize" in item) { found.push(item); return }
                     var children = item.children || []
                     for (var i = 0; i < children.length; i++) walk(children[i])
@@ -739,10 +745,38 @@ Panel {
                   var changed = found.length !== sizedIcons.length
                   for (var i = 0; !changed && i < found.length; i++) if (found[i] !== sizedIcons[i]) changed = true
                   if (changed) sizedIcons = found
+                  changed = buttons.length !== panelButtons.length
+                  for (var j = 0; !changed && j < buttons.length; j++) if (buttons[j] !== panelButtons[j]) changed = true
+                  if (changed) panelButtons = buttons
+                }
+
+                // Borrowed buttons retain their Bar color bindings after moving.
+                // Override only drawer visuals, restoring those bindings on return.
+                Repeater {
+                  model: host.panelButtons
+                  delegate: Item {
+                    required property var modelData
+                    width: 0
+                    height: 0
+                    Binding {
+                      target: modelData
+                      property: "foreground"
+                      when: host.borrowed !== null
+                      value: root.foreground
+                      restoreMode: Binding.RestoreBindingOrValue
+                    }
+                    Binding {
+                      target: modelData
+                      property: "useActiveColor"
+                      when: host.borrowed !== null
+                      value: false
+                      restoreMode: Binding.RestoreBindingOrValue
+                    }
+                  }
                 }
 
                 Repeater {
-                  model: host.sizedIcons
+                  model: host.widgetId === "omarchy.indicators" || host.widgetId === "omarchy.system-update" ? host.sizedIcons : []
                   delegate: Item {
                     required property var modelData
                     width: 0
@@ -939,6 +973,8 @@ Panel {
                     anchors.fill: parent
                     visible: host.widgetId === "omarchy.microphone"
                     bar: root.bar
+                    foreground: root.foreground
+                    useActiveColor: false
                     text: host.nativeItem && host.nativeItem.muted ? "󰍭" : "󰍬"
                     onPressed: function(button) { host.activate(button) }
                   }

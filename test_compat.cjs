@@ -107,3 +107,29 @@ refreshContext.root.nativeIndicators = null
 refreshContext.refresh()
 assert.equal(localRefreshes, 2)
 console.log('Indicator refresh forwarding checks passed')
+
+const colorContext = {
+  nativeItem: {children: [
+    {triggerPress() {}, foreground: '#000000', useActiveColor: true, opticalSize: 20},
+    {triggerPress() {}, foreground: '#000000', useActiveColor: true},
+    {foreground: '#000000'},
+  ]},
+  sizedIcons: [],
+  panelButtons: [],
+}
+vm.createContext(colorContext)
+vm.runInContext(qmlFunction('syncIconSizes'), colorContext)
+colorContext.syncIconSizes()
+assert.equal(colorContext.panelButtons.length, 2, 'discover both glyph and label buttons for panel colors')
+assert.equal(colorContext.sizedIcons.length, 1, 'size overrides remain limited to icon buttons')
+const buttons = colorContext.panelButtons
+colorContext.syncIconSizes()
+assert.equal(colorContext.panelButtons, buttons, 'unchanged scans must preserve color delegates')
+colorContext.nativeItem = null
+colorContext.syncIconSizes()
+assert.equal(colorContext.panelButtons.length, 0, 'unloaded buttons must be released')
+assert.match(source, /property: "foreground"\s*when: host\.borrowed !== null\s*value: root\.foreground\s*restoreMode: Binding\.RestoreBindingOrValue/)
+assert.match(source, /property: "useActiveColor"\s*when: host\.borrowed !== null\s*value: false\s*restoreMode: Binding\.RestoreBindingOrValue/)
+assert.match(indicators, /foreground: Qt\.binding\(function\(\) \{ return root\.foreground \}\)/)
+assert.match(indicators, /useActiveColor: false/)
+console.log('Panel icon color and binding restoration checks passed')

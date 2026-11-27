@@ -185,22 +185,24 @@ Panel {
   }
 
   onOpenedChanged: {
+    scrollAnim.stop()
     if (opened) { returnOwner = null; escapeOwner = null; closeDetails(); discover(); viewReset.restart() }
     else if (returnOwner) childClosed(returnOwner)
   }
-  onConfiguringChanged: { restoreScrollOnOpen = false; viewReset.restart() }
+  onConfiguringChanged: { scrollAnim.stop(); restoreScrollOnOpen = false; viewReset.restart() }
   // Flickable can preserve its old bottom anchor while the new page is being
   // laid out. Reset after that resize, not before, so the header stays visible.
   Timer {
     id: viewReset
     interval: 32
     onTriggered: {
-      contentScroll.contentY = root.restoreScrollOnOpen ? Math.max(0, Math.min(root.returnScrollY, contentScroll.contentHeight - contentScroll.height)) : 0
+      scrollAnim.stop()
+      contentScroll.contentY = root.restoreScrollOnOpen ? Math.max(0, Math.min(root.returnScrollY, contentScroll.maxScroll)) : 0
       root.restoreScrollOnOpen = false
     }
   }
   Component.onCompleted: Qt.callLater(discover)
-  Timer { interval: 500; running: true; repeat: true; onTriggered: root.discover() }
+  Timer { interval: 1500; running: !root.opened; repeat: true; onTriggered: root.discover() }
 
   IpcHandler {
     target: "konocontrol-debug"
@@ -267,7 +269,10 @@ Panel {
     }
     function configure(): void { root.configuring = true; root.open() }
     function overview(): void { root.configuring = false; root.open() }
-    function scroll(delta: int): void { contentScroll.contentY = Math.max(0, contentScroll.contentY + delta) }
+    function scroll(delta: int): void {
+      scrollAnim.stop()
+      contentScroll.contentY = Math.max(0, Math.min(contentScroll.maxScroll, contentScroll.contentY + delta))
+    }
   }
 
   BarIconButton {
@@ -332,9 +337,56 @@ Panel {
       Flickable {
         id: contentScroll
         anchors.fill: parent
+        contentWidth: width
         contentHeight: drawerColumn.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+
+        readonly property real maxScroll: Math.max(0, contentHeight - height)
+
+        onHeightChanged: if (!scrollAnim.running) contentY = Math.max(0, Math.min(contentY, maxScroll))
+        onContentHeightChanged: if (!scrollAnim.running) contentY = Math.max(0, Math.min(contentY, maxScroll))
+        onDraggingChanged: if (dragging) scrollAnim.stop()
+        onFlickingChanged: if (flicking) scrollAnim.stop()
+
+        function scrollByWheel(pixelDeltaY, angleDeltaY, isTouchPad) {
+          if (maxScroll <= 0) return
+          if (pixelDeltaY !== 0) {
+            scrollAnim.stop()
+            contentY = Math.max(0, Math.min(maxScroll, contentY - pixelDeltaY))
+            return
+          }
+          if (angleDeltaY === 0) return
+          var step = angleDeltaY / 120 * Style.space(60)
+          if (isTouchPad) {
+            scrollAnim.stop()
+            contentY = Math.max(0, Math.min(maxScroll, contentY - step))
+            return
+          }
+          var base = scrollAnim.running ? scrollAnim.to : contentY
+          var target = Math.max(0, Math.min(maxScroll, base - step))
+          var duration = Style.duration(110)
+          if (duration <= 0) {
+            scrollAnim.stop()
+            contentY = target
+            return
+          }
+          scrollAnim.stop()
+          scrollAnim.from = contentY
+          scrollAnim.to = target
+          scrollAnim.duration = duration
+          scrollAnim.start()
+        }
+
+        NumberAnimation {
+          id: scrollAnim
+          target: contentScroll
+          property: "contentY"
+          duration: Style.duration(110)
+          easing.type: Easing.OutCubic
+        }
 
         Column {
           id: drawerColumn
@@ -629,7 +681,10 @@ Panel {
                 }
                 Timer {
                   interval: 100
-                  running: host.nativeItem !== null && typeof host.nativeItem.open === "function" && (root.opened || root.returnOwner === host.nativeItem) && host.escapeTargets.length === 0
+                  // Built-in KeyboardPanels load their focusTarget lazily on first open.
+                  // Only poll the single child panel the user actually opened so opening
+                  // the drawer never runs 100ms tree walks across every collected widget.
+                  running: host.nativeItem !== null && typeof host.nativeItem.open === "function" && root.returnOwner === host.nativeItem && host.escapeTargets.length === 0
                   triggeredOnStart: true
                   repeat: true
                   onTriggered: host.findEscapeTargets()
@@ -721,8 +776,13 @@ Panel {
                   return null
                 }
                 Timer {
-                  interval: 250
-                  running: host.collected || host.widgetId === "omarchy.indicators" || host.widgetId === "omarchy.system-update"
+                  id: iconSyncTimer
+                  interval: host.widgetId === "omarchy.indicators" && host.inactiveIndicatorArea !== null ? 2000 : 250
+                  running: host.nativeItem !== null && (
+                    host.widgetId === "omarchy.indicators"
+                    || (host.widgetId === "omarchy.system-update" && host.sizedIcons.length === 0)
+                    || (host.collected && !host.specialCard && host.panelButtons.length === 0)
+                  )
                   repeat: true
                   triggeredOnStart: true
                   onTriggered: {
@@ -886,7 +946,7 @@ Panel {
                 }
 
                 onCollectedChanged: syncTimer.restart()
-                onNativeItemChanged: { escapeTargets = []; syncTimer.restart() }
+                onNativeItemChanged: { escapeTargets = []; panelButtons = []; sizedIcons = []; inactiveIndicatorArea = null; syncTimer.restart() }
                 Component.onCompleted: syncTimer.restart()
                 Component.onDestruction: { syncTimer.stop(); release() }
 
@@ -923,17 +983,7 @@ Panel {
                   radius: Style.cornerRadius
                   color: cardHover.hovered ? Style.hoverFillFor(root.foreground, Color.accent) : Style.normalFillFor(root.foreground, Color.accent)
                   borderSpec: cardHover.hovered ? Border.controlSpec("hover-cursor", root.foreground, Color.accent) : Border.none()
-                  Behavior on color { ColorAnimation { duration: 120 } }
-                }
-
-                // A wheel-only overlay must be above the borrowed native icon:
-                // its own MouseArea otherwise consumes wheel before the card.
-                MouseArea {
-                  anchors.fill: parent
-                  z: 10
-                  enabled: !root.configuring && host.collected && (host.widgetId === "omarchy.audio" || host.widgetId === "omarchy.monitor" || host.widgetId === "omarchy.microphone")
-                  acceptedButtons: Qt.NoButton
-                  onWheel: function(event) { event.accepted = true }
+                  Behavior on color { ColorAnimation { duration: Style.duration(120) } }
                 }
 
                 MouseArea {
@@ -945,11 +995,6 @@ Panel {
                   cursorShape: host.nativeButton() ? Qt.PointingHandCursor : Qt.ArrowCursor
                   onClicked: function(mouse) {
                     host.activate(mouse.button)
-                  }
-                  onWheel: function(wheel) {
-                    if (host.widgetId === "omarchy.audio" || host.widgetId === "omarchy.monitor" || host.widgetId === "omarchy.microphone") { wheel.accepted = true; return }
-                    var target = host.nativeButton()
-                    if (target && typeof target.wheelMoved === "function") target.wheelMoved(wheel.angleDelta.y)
                   }
                 }
 
@@ -1039,6 +1084,25 @@ Panel {
             color: Color.urgent
             font.family: root.textFont
             font.pixelSize: Style.font.bodySmall
+          }
+        }
+      }
+
+      // Intercept wheel events above all borrowed WidgetButtons and indicators:
+      // WidgetButton's internal MouseArea consumes wheel events by default and
+      // audio/monitor/microphone buttons would adjust levels instead of scrolling.
+      Item {
+        id: scrollWheelOverlay
+        anchors.fill: contentScroll
+        z: 100
+
+        WheelHandler {
+          target: null
+          acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+          onWheel: function(event) {
+            event.accepted = true
+            var isTouchPad = !!(event.device && event.device.type === PointerDevice.TouchPad)
+            contentScroll.scrollByWheel(event.pixelDelta.y, event.angleDelta.y, isTouchPad)
           }
         }
       }

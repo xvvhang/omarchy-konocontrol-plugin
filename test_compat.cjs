@@ -133,3 +133,44 @@ assert.match(source, /property: "useActiveColor"\s*when: host\.borrowed !== null
 assert.match(indicators, /foreground: Qt\.binding\(function\(\) \{ return root\.foreground \}\)/)
 assert.match(indicators, /useActiveColor: false/)
 console.log('Panel icon color and binding restoration checks passed')
+
+const scrollContext = {
+  contentY: 0,
+  maxScroll: 200,
+  Style: {space: v => v, duration: v => v},
+  scrollAnim: {
+    running: false,
+    from: 0,
+    to: 0,
+    duration: 0,
+    start() { this.running = true },
+    stop() { this.running = false },
+  },
+}
+vm.createContext(scrollContext)
+vm.runInContext(qmlFunction('scrollByWheel'), scrollContext)
+scrollContext.scrollByWheel(-35, 0, true)
+assert.equal(scrollContext.contentY, 35, 'pixelDelta tracks touchpad 1:1')
+assert.equal(scrollContext.scrollAnim.running, false)
+scrollContext.scrollByWheel(0, -120, false)
+assert.equal(scrollContext.scrollAnim.running, true, 'mouse wheel uses smooth animation')
+assert.equal(scrollContext.scrollAnim.from, 35)
+assert.equal(scrollContext.scrollAnim.to, 95)
+scrollContext.scrollByWheel(0, -120, false)
+assert.equal(scrollContext.scrollAnim.to, 155, 'rapid mouse wheel ticks accumulate cleanly')
+scrollContext.scrollByWheel(0, -240, false)
+assert.equal(scrollContext.scrollAnim.to, 200, 'scroll target clamps to maxScroll')
+scrollContext.scrollByWheel(40, 0, true)
+assert.equal(scrollContext.scrollAnim.running, false, 'touchpad cancels mouse animation')
+assert.equal(scrollContext.contentY, 0, 'pixelDelta clamps at top')
+scrollContext.Style.duration = () => 0
+scrollContext.scrollByWheel(0, -120, false)
+assert.equal(scrollContext.contentY, 60, 'reduced motion snaps immediately')
+assert.equal(scrollContext.scrollAnim.running, false)
+assert.match(source, /id: scrollWheelOverlay[\s\S]*?z: 100[\s\S]*?WheelHandler\s*\{\s*target: null/)
+const cardMouseBlock = source.match(/MouseArea\s*\{\s*id: cardMouse[\s\S]*?\n\s{16}\}/)
+assert.ok(cardMouseBlock, 'cardMouse block should exist')
+assert.doesNotMatch(cardMouseBlock[0], /onWheel:/, 'cardMouse must not swallow wheel events')
+assert.doesNotMatch(source, /\(root\.opened \|\| root\.returnOwner === host\.nativeItem\)/,
+  'escape-target polling must not spin while only the drawer is open')
+console.log('Panel scrolling and timer regression checks passed')
